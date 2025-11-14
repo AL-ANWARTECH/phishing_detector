@@ -1,10 +1,13 @@
 from flask import Flask, request, jsonify, render_template_string
 from phishing_detector import PhishingDetector
 from database import Database
+from config import Config
+from logger import get_logger
 
 app = Flask(__name__)
 detector = PhishingDetector()
-db = Database()  # Add database instance
+db = Database()
+logger = get_logger()  # Add logger
 
 # Enhanced HTML template with history view
 HTML_TEMPLATE = '''
@@ -30,11 +33,19 @@ HTML_TEMPLATE = '''
         .tab-links { margin-bottom: 10px; }
         .tab-link { padding: 10px 15px; background: #e9ecef; cursor: pointer; border: 1px solid #ddd; }
         .tab-link.active { background: #007bff; color: white; }
+        .stats { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Phishing Detection System</h1>
+        
+        <div class="stats">
+            <strong>System Status:</strong> Active | 
+            <strong>Threshold:</strong> {{config.PHISHING_THRESHOLD}}% | 
+            <strong>ML Weight:</strong> {{config.ML_WEIGHT}} | 
+            <strong>Rule Weight:</strong> {{config.RULE_WEIGHT}}
+        </div>
         
         <div class="tabs">
             <div class="tab-links">
@@ -166,7 +177,11 @@ HTML_TEMPLATE = '''
 
 @app.route('/')
 def home():
-    return render_template_string(HTML_TEMPLATE)
+    # Pass config to template (simplified - in real app you'd use proper template engine)
+    config_html = HTML_TEMPLATE.replace('{{config.PHISHING_THRESHOLD}}', str(Config.PHISHING_THRESHOLD))
+    config_html = config_html.replace('{{config.ML_WEIGHT}}', str(Config.ML_WEIGHT))
+    config_html = config_html.replace('{{config.RULE_WEIGHT}}', str(Config.RULE_WEIGHT))
+    return config_html
 
 @app.route('/analyze', methods=['POST'])
 def analyze_email():
@@ -175,57 +190,102 @@ def analyze_email():
         email_content = data.get('email_content', '')
         
         if not email_content:
+            logger.warning("Empty email content received for analysis")
             return jsonify({'error': 'No email content provided'}), 400
         
+        logger.info(f"Analyzing email of length {len(email_content)} characters")
         result = detector.analyze_email(email_content)
         
-        # Save result to database
-        db.save_analysis_result(email_content, result)
+        # Save result to database if enabled
+        if Config.ENABLE_DATABASE_LOGGING:
+            db.save_analysis_result(email_content, result)
+            logger.info("Analysis result saved to database")
         
         return jsonify(result)
     
     except Exception as e:
+        logger.error(f"Error in analyze_email endpoint: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/history')
 def get_history():
     try:
-        history = db.get_analysis_history(10)
-        # Convert tuples to dictionaries for JSON
-        history_dict = []
-        for item in history:
-            history_dict.append({
-                'id': item[0],
-                'email_content': item[1][:100] + '...' if len(item[1]) > 100 else item[1],  # Truncate for display
-                'is_phishing': bool(item[2]),
-                'confidence_score': item[3],
-                'rule_score': item[4],
-                'ml_prediction': item[5],
-                'ml_confidence': item[6],
-                'url_score': item[7],
-                'rule_reasons': item[8],
-                'url_reasons': item[9],
-                'analyzed_at': item[10]
-            })
-        return jsonify(history_dict)
+        if Config.ENABLE_HISTORY_TRACKING:
+            history = db.get_analysis_history(10)
+            # Convert tuples to dictionaries for JSON
+            history_dict = []
+            for item in history:
+                history_dict.append({
+                    'id': item[0],
+                    'email_content': item[1][:100] + '...' if len(item[1]) > 100 else item[1],  # Truncate for display
+                    'is_phishing': bool(item[2]),
+                    'confidence_score': item[3],
+                    'rule_score': item[4],
+                    'ml_prediction': item[5],
+                    'ml_confidence': item[6],
+                    'url_score': item[7],
+                    'rule_reasons': item[8],
+                    'url_reasons': item[9],
+                    'analyzed_at': item[10]
+                })
+            logger.info(f"Retrieved {len(history_dict)} history items")
+            return jsonify(history_dict)
+        else:
+            logger.warning("History tracking is disabled")
+            return jsonify([])
     except Exception as e:
+        logger.error(f"Error in get_history endpoint: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/health')
 def health_check():
-    return jsonify({
+    status = {
         'status': 'healthy', 
         'ml_model_trained': detector.ml_model.is_trained,
         'system': 'phishing_detector',
-        'database': 'connected'
-    })
+        'database': 'connected',
+        'config': {
+            'phishing_threshold': Config.PHISHING_THRESHOLD,
+            'ml_weight': Config.ML_WEIGHT,
+            'rule_weight': Config.RULE_WEIGHT
+        }
+    }
+    logger.info("Health check requested")
+    return jsonify(status)
+
+@app.route('/stats')
+def get_stats():
+    """Get system statistics"""
+    try:
+        if Config.ENABLE_HISTORY_TRACKING:
+            history = db.get_analysis_history(100)  # Get last 100 records for stats
+            total_analyses = len(history)
+            phishing_count = sum(1 for item in history if item[2])  # item[2] is is_phishing
+            safe_count = total_analyses - phishing_count
+            
+            stats = {
+                'total_analyses': total_analyses,
+                'phishing_detected': phishing_count,
+                'safe_emails': safe_count,
+                'phishing_percentage': (phishing_count / total_analyses * 100) if total_analyses > 0 else 0
+            }
+        else:
+            stats = {'total_analyses': 0, 'phishing_detected': 0, 'safe_emails': 0, 'phishing_percentage': 0}
+        
+        logger.info("Statistics retrieved")
+        return jsonify(stats)
+    except Exception as e:
+        logger.error(f"Error in get_stats endpoint: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
+    logger.info("Starting Phishing Detection System...")
     print("Starting Phishing Detection System...")
     print("Visit http://localhost:5000 to use the web interface")
     print("API endpoints:")
     print("  - GET / - Web interface")
     print("  - POST /analyze - Analyze email content")
     print("  - GET /history - Get analysis history")
+    print("  - GET /stats - Get system statistics")
     print("  - GET /health - Health check")
     app.run(debug=True, host='0.0.0.0', port=5000)
