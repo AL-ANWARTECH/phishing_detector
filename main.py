@@ -3,11 +3,14 @@ from phishing_detector import PhishingDetector
 from database import Database
 from config import Config
 from logger import get_logger
+from performance_monitor import get_performance_monitor  
+import time  
 
 app = Flask(__name__)
 detector = PhishingDetector()
 db = Database()
-logger = get_logger()  # Add logger
+logger = get_logger()
+performance_monitor = get_performance_monitor()  
 
 # Enhanced HTML template with history view
 HTML_TEMPLATE = '''
@@ -185,11 +188,14 @@ def home():
 
 @app.route('/analyze', methods=['POST'])
 def analyze_email():
+    start_time = time.time()  # Add timing
+    
     try:
         data = request.json
         email_content = data.get('email_content', '')
         
         if not email_content:
+            performance_monitor.record_analysis(time.time() - start_time, False, success=False)  # Record error
             logger.warning("Empty email content received for analysis")
             return jsonify({'error': 'No email content provided'}), 400
         
@@ -201,9 +207,15 @@ def analyze_email():
             db.save_analysis_result(email_content, result)
             logger.info("Analysis result saved to database")
         
+        # Record performance
+        analysis_time = time.time() - start_time
+        performance_monitor.record_analysis(analysis_time, result.get('is_phishing', False), success=True)
+        
         return jsonify(result)
     
     except Exception as e:
+        analysis_time = time.time() - start_time
+        performance_monitor.record_analysis(analysis_time, False, success=False)  # Record error
         logger.error(f"Error in analyze_email endpoint: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
