@@ -1,10 +1,12 @@
 from flask import Flask, request, jsonify, render_template_string
 from phishing_detector import PhishingDetector
+from database import Database
 
 app = Flask(__name__)
 detector = PhishingDetector()
+db = Database()  # Add database instance
 
-# Simple HTML template
+# Enhanced HTML template with history view
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html>
@@ -14,22 +16,46 @@ HTML_TEMPLATE = '''
         body { font-family: Arial, sans-serif; margin: 40px; }
         .container { max-width: 800px; margin: 0 auto; }
         textarea { width: 100%; height: 200px; margin: 10px 0; }
-        button { background: #007bff; color: white; padding: 10px 20px; border: none; cursor: pointer; }
+        button { background: #007bff; color: white; padding: 10px 20px; border: none; cursor: pointer; margin: 5px; }
         button:hover { background: #0056b3; }
         .result { margin-top: 20px; padding: 15px; border-radius: 5px; }
         .phishing { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
         .safe { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        .history { margin-top: 30px; }
+        .history-item { padding: 10px; margin: 5px 0; border: 1px solid #ddd; border-radius: 3px; }
+        .tabs { margin-bottom: 20px; }
+        .tab { display: none; }
+        .tab.active { display: block; }
+        .tab-links { margin-bottom: 10px; }
+        .tab-link { padding: 10px 15px; background: #e9ecef; cursor: pointer; border: 1px solid #ddd; }
+        .tab-link.active { background: #007bff; color: white; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Phishing Detection System</h1>
-        <p>Paste an email content below to analyze for phishing indicators:</p>
-        <textarea id="emailContent" placeholder="Paste email content here..."></textarea>
-        <br>
-        <button onclick="analyzeEmail()">Analyze Email</button>
-        <div id="result" class="result" style="display:none;"></div>
+        
+        <div class="tabs">
+            <div class="tab-links">
+                <div class="tab-link active" onclick="switchTab('analyze')">Analyze Email</div>
+                <div class="tab-link" onclick="switchTab('history')">Analysis History</div>
+            </div>
+            
+            <div id="analyze" class="tab active">
+                <p>Paste an email content below to analyze for phishing indicators:</p>
+                <textarea id="emailContent" placeholder="Paste email content here..."></textarea>
+                <br>
+                <button onclick="analyzeEmail()">Analyze Email</button>
+                <div id="result" class="result" style="display:none;"></div>
+            </div>
+            
+            <div id="history" class="tab">
+                <h3>Recent Analysis History</h3>
+                <div id="historyContent"></div>
+                <button onclick="loadHistory()">Load History</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -64,7 +90,9 @@ HTML_TEMPLATE = '''
                         <p><strong>Confidence Score:</strong> ${result.confidence_score.toFixed(2)}%</p>
                         <p><strong>Rule Score:</strong> ${result.rule_score}%</p>
                         <p><strong>ML Prediction:</strong> ${result.ml_prediction} (Confidence: ${(result.ml_confidence*100).toFixed(2)}%)</p>
-                        <p><strong>Reasons:</strong> ${result.rule_reasons.join(', ')}</p>
+                        <p><strong>URL Score:</strong> ${result.url_score}%</p>
+                        <p><strong>Rule Reasons:</strong> ${result.rule_reasons.join(', ')}</p>
+                        <p><strong>URL Reasons:</strong> ${result.url_reasons.join(', ')}</p>
                     `;
                 } else {
                     resultDiv.className = 'result safe';
@@ -73,12 +101,63 @@ HTML_TEMPLATE = '''
                         <p><strong>Confidence Score:</strong> ${result.confidence_score.toFixed(2)}%</p>
                         <p><strong>Rule Score:</strong> ${result.rule_score}%</p>
                         <p><strong>ML Prediction:</strong> ${result.ml_prediction} (Confidence: ${(result.ml_confidence*100).toFixed(2)}%)</p>
+                        <p><strong>URL Score:</strong> ${result.url_score}%</p>
                     `;
                 }
             } catch (error) {
                 resultDiv.className = 'result info';
                 resultDiv.innerHTML = `<h3>⚠️ Error</h3><p>Failed to analyze email: ${error.message}</p>`;
             }
+        }
+        
+        async function loadHistory() {
+            try {
+                const response = await fetch('/history');
+                const history = await response.json();
+                
+                const historyDiv = document.getElementById('historyContent');
+                if (history.length === 0) {
+                    historyDiv.innerHTML = '<p>No analysis history available.</p>';
+                    return;
+                }
+                
+                let html = '<div class="history">';
+                history.forEach(item => {
+                    const phishingClass = item.is_phishing ? 'phishing' : 'safe';
+                    const phishingText = item.is_phishing ? '⚠️ PHISHING' : '✅ SAFE';
+                    
+                    html += `
+                        <div class="history-item ${phishingClass}">
+                            <strong>${phishingText}</strong> - Score: ${item.confidence_score.toFixed(2)}% 
+                            (${new Date(item.analyzed_at).toLocaleString()})
+                            <br><small>Rule: ${item.rule_score}%, ML: ${item.ml_prediction} (${(item.ml_confidence*100).toFixed(2)}%), URL: ${item.url_score}%</small>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                
+                historyDiv.innerHTML = html;
+            } catch (error) {
+                document.getElementById('historyContent').innerHTML = `<p>Error loading history: ${error.message}</p>`;
+            }
+        }
+        
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Remove active class from all tab links
+            document.querySelectorAll('.tab-link').forEach(link => {
+                link.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            
+            // Add active class to clicked tab link
+            event.target.classList.add('active');
         }
     </script>
 </body>
@@ -99,8 +178,36 @@ def analyze_email():
             return jsonify({'error': 'No email content provided'}), 400
         
         result = detector.analyze_email(email_content)
+        
+        # Save result to database
+        db.save_analysis_result(email_content, result)
+        
         return jsonify(result)
     
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/history')
+def get_history():
+    try:
+        history = db.get_analysis_history(10)
+        # Convert tuples to dictionaries for JSON
+        history_dict = []
+        for item in history:
+            history_dict.append({
+                'id': item[0],
+                'email_content': item[1][:100] + '...' if len(item[1]) > 100 else item[1],  # Truncate for display
+                'is_phishing': bool(item[2]),
+                'confidence_score': item[3],
+                'rule_score': item[4],
+                'ml_prediction': item[5],
+                'ml_confidence': item[6],
+                'url_score': item[7],
+                'rule_reasons': item[8],
+                'url_reasons': item[9],
+                'analyzed_at': item[10]
+            })
+        return jsonify(history_dict)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -109,7 +216,8 @@ def health_check():
     return jsonify({
         'status': 'healthy', 
         'ml_model_trained': detector.ml_model.is_trained,
-        'system': 'phishing_detector'
+        'system': 'phishing_detector',
+        'database': 'connected'
     })
 
 if __name__ == '__main__':
@@ -118,5 +226,6 @@ if __name__ == '__main__':
     print("API endpoints:")
     print("  - GET / - Web interface")
     print("  - POST /analyze - Analyze email content")
+    print("  - GET /history - Get analysis history")
     print("  - GET /health - Health check")
     app.run(debug=True, host='0.0.0.0', port=5000)
