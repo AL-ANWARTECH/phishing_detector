@@ -1,0 +1,11 @@
+From: fake-bank@example.com
+To: victim@gmail.com
+Subject: URGENT: Account Security Alert
+Reply-To: security@fake-bank.com
+
+Dear Customer,
+
+Your account has been suspended. Please click here to verify:
+http://fake-bank-login.com/verify
+
+Click now to secure your account!
