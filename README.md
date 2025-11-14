@@ -1,6 +1,4 @@
-# Updated README.md
-
-Here's your updated README.md with all the new features and improvements:
+Here's the updated README.md with your actual contact information:
 
 ````markdown
 # Phishing Detection System
@@ -282,6 +280,14 @@ For support:
 - Review the logs directory
 - Create an issue in the repository
 - Contact the development team
+
+**Contact Information:**
+
+- **Email:** anwarsagirmustapha1@gmail.com
+- **WhatsApp:** +2349067508735
+- **LinkedIn:** https://www.linkedin.com/in/anwarsagirmustapha/
+- **Twitter:** https://x.com/AlAnwarTech
+- **Instagram:** https://www.instagram.com/al_anwartech/
 
 ## 🙏 Acknowledgments
 
