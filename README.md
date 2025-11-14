@@ -158,7 +158,7 @@ git commit -m "docs: add project documentation and usage instructions"
 
 ## **Project Completion!**
 
-Congratulations! You have successfully built a complete phishing detection system with:
+I have successfully built a complete phishing detection system with:
 
 - ✅ Email parsing functionality
 - ✅ Rule-based detection engine
