@@ -1,6 +1,7 @@
 from email_parser import EmailParser
 from rule_engine import RuleEngine
 from ml_model import MLModel
+from url_analyzer import URLAnalyzer  # Add this import
 from config import Config
 
 class PhishingDetector:
@@ -8,6 +9,7 @@ class PhishingDetector:
         self.email_parser = EmailParser()
         self.rule_engine = RuleEngine()
         self.ml_model = MLModel()
+        self.url_analyzer = URLAnalyzer()  # Add URL analyzer
         self.config = Config()
     
     def analyze_email(self, email_content):
@@ -24,8 +26,13 @@ class PhishingDetector:
             if self.ml_model.is_trained:
                 ml_prediction, ml_confidence = self.ml_model.predict(features)
             
-            # Calculate hybrid score
-            hybrid_score = self.calculate_hybrid_score(rule_score, ml_prediction, ml_confidence)
+            # Get URL analysis
+            url_score, url_reasons = self.url_analyzer.analyze_email_urls(features)
+            
+            # Calculate hybrid score with URL analysis
+            hybrid_score = self.calculate_enhanced_hybrid_score(
+                rule_score, ml_prediction, ml_confidence, url_score
+            )
             
             # Determine if phishing
             is_phishing = hybrid_score > self.config.PHISHING_THRESHOLD
@@ -36,7 +43,9 @@ class PhishingDetector:
                 'rule_score': rule_score,
                 'ml_prediction': ml_prediction,
                 'ml_confidence': ml_confidence,
+                'url_score': url_score,
                 'rule_reasons': rule_reasons,
+                'url_reasons': url_reasons,
                 'features': features
             }
             
@@ -49,17 +58,21 @@ class PhishingDetector:
                 'confidence_score': 0
             }
     
-    def calculate_hybrid_score(self, rule_score, ml_prediction, ml_confidence):
-        """Calculate hybrid score combining rule and ML scores"""
-        # Normalize rule score (0-100) to (0-1)
+    def calculate_enhanced_hybrid_score(self, rule_score, ml_prediction, ml_confidence, url_score):
+        """Calculate hybrid score with URL analysis"""
+        # Normalize scores to 0-1 range
         normalized_rule_score = rule_score / 100.0
+        normalized_url_score = url_score / 100.0
         
         # ML prediction contributes based on confidence
         ml_contribution = ml_prediction * ml_confidence
         
-        # Weighted combination
-        hybrid_score = (self.config.RULE_WEIGHT * normalized_rule_score * 100) + \
-                      (self.config.ML_WEIGHT * ml_contribution * 100)
+        # Weighted combination with URL score
+        hybrid_score = (
+            (self.config.RULE_WEIGHT * 0.6 * normalized_rule_score * 100) +
+            (self.config.ML_WEIGHT * 0.6 * ml_contribution * 100) +
+            (0.4 * normalized_url_score * 100)  # URL gets 40% weight in this calculation
+        )
         
         return min(hybrid_score, 100)  # Cap at 100
     
@@ -120,7 +133,9 @@ Click now to secure your account!
     print(f"Overall Confidence Score: {result['confidence_score']:.2f}")
     print(f"Rule Score: {result['rule_score']}")
     print(f"ML Prediction: {result['ml_prediction']} (Confidence: {result['ml_confidence']:.2f})")
+    print(f"URL Score: {result['url_score']}")
     print(f"Rule Reasons: {result['rule_reasons']}")
+    print(f"URL Reasons: {result['url_reasons']}")
     
     return result
 
